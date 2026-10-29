@@ -1,4 +1,4 @@
-"""Command line: python -m cav {scrape,import,build,resolve,serve}."""
+"""Command line: cav {scrape,import,build,resolve,serve}, plus cav-scrape, cav-build, cav-serve."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 
 from .build import Builder
-from .scrape import crawl, import_mirror
+from .scrape import Blocked, crawl, import_mirror
 from .store import Store
 from .versions import parse_query, resolve, version_id
 
@@ -43,7 +43,10 @@ def main(argv=None) -> None:
     store = Store(args.data)
 
     if args.cmd == "scrape":
-        print(crawl(store, limit=args.limit, delay=args.delay))
+        try:
+            print(crawl(store, limit=args.limit, delay=args.delay))
+        except Blocked as e:
+            raise SystemExit(f"error: {e}")
     elif args.cmd == "import":
         at = parse_query(args.at) if args.at else datetime.now(timezone.utc)
         print(import_mirror(store, args.directory, at))
@@ -56,6 +59,24 @@ def main(argv=None) -> None:
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=args.out)
         print(f"http://localhost:{args.port}/")
         http.server.ThreadingHTTPServer(("", args.port), handler).serve_forever()
+
+
+def _sub(cmd: str):
+    def run() -> None:
+        import sys
+        # Global options (--data) go before the subcommand.
+        args = sys.argv[1:]
+        pre = []
+        while args and args[0] == "--data":
+            pre += args[:2]
+            args = args[2:]
+        main(pre + [cmd] + args)
+    return run
+
+
+scrape = _sub("scrape")
+build = _sub("build")
+serve = _sub("serve")
 
 
 if __name__ == "__main__":
