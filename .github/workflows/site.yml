@@ -24,9 +24,9 @@ jobs:
           uv run cav --data /tmp/fx import tests/fixtures/v1/constitution.congress.gov --at 2026-01-15T12:00:00Z
           uv run cav --data /tmp/fx import tests/fixtures/v2/constitution.congress.gov --at 2026-06-01T08:30:00Z
           uv run cav --data /tmp/fx build --out /tmp/fx-dist
-          (uv run cav serve --out /tmp/fx-dist --port 8765 &) && sleep 2
+          .venv/bin/cav serve --out /tmp/fx-dist --port 8765 & SERVER=$!; sleep 2
           npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
-          node tests/e2e.cjs http://localhost:8765
+          node tests/e2e.cjs http://localhost:8765; STATUS=$?; kill $SERVER; exit $STATUS
 
   deploy:
     if: github.ref == 'refs/heads/main'
