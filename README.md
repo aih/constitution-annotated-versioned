@@ -52,16 +52,25 @@ Netlify) could do the same resolution server-side as a 302 using
 
 ## Usage
 
-```sh
-pip install -r requirements.txt
+Requires [uv](https://docs.astral.sh/uv/). `uv sync` installs Python 3.12
+(from `.python-version`) and the dependencies into `.venv/`.
 
-python -m cav scrape                 # crawl the source into data/ as a new version
-python -m cav scrape --limit 50      # partial crawl for testing
-python -m cav import <dir> --at 2026-06-01T08:30:00Z   # snapshot an existing mirror directory
-python -m cav build --out dist [--base /repo-name]
-python -m cav resolve 2026-03-01     # print the version a date resolves to
-python -m cav serve --out dist       # http://localhost:8000/
+```sh
+uv sync
+
+uv run cav-scrape --limit 5          # quick check that the source serves your network
+uv run cav-scrape                    # crawl the source into data/ as a new version
+uv run cav-build                     # generate the site into dist/
+uv run cav-serve                     # http://localhost:8000/browse/
+
+uv run cav-build --base /repo-name   # URLs prefixed for hosting below the domain root
+uv run cav import <dir> --at 2026-06-01T08:30:00Z   # snapshot an existing mirror directory
+uv run cav resolve 2026-03-01        # print the version a date resolves to
 ```
+
+`cav-scrape`, `cav-build` and `cav-serve` are shorthand for `cav scrape`,
+`cav build` and `cav serve`. All commands take `--data <dir>` (default `data`)
+before other options to use a different snapshot store.
 
 `scrape` starts at `/browse/` and `/resources/`, follows links within those
 sections, captures every same-host stylesheet, script, image, and font they
@@ -100,11 +109,11 @@ number of versions while `data/` grows only with changed files.
 ## Tests
 
 ```sh
-python -m unittest discover -s tests -t .
+uv run python -m unittest discover -s tests -t .
 
-python -m cav --data /tmp/fx import tests/fixtures/v1/constitution.congress.gov --at 2026-01-15T12:00:00Z
-python -m cav --data /tmp/fx import tests/fixtures/v2/constitution.congress.gov --at 2026-06-01T08:30:00Z
-python -m cav --data /tmp/fx build --out /tmp/fx-dist
-python -m cav serve --out /tmp/fx-dist --port 8765 &
+uv run cav --data /tmp/fx import tests/fixtures/v1/constitution.congress.gov --at 2026-01-15T12:00:00Z
+uv run cav --data /tmp/fx import tests/fixtures/v2/constitution.congress.gov --at 2026-06-01T08:30:00Z
+uv run cav --data /tmp/fx build --out /tmp/fx-dist
+uv run cav serve --out /tmp/fx-dist --port 8765 &
 node tests/e2e.cjs http://localhost:8765   # needs the playwright npm package
 ```
