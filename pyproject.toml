@@ -13,6 +13,7 @@ dependencies = [
 [project.scripts]
 cav = "cav.__main__:main"
 cav-scrape = "cav.__main__:scrape"
+cav-wayback = "cav.__main__:wayback"
 cav-build = "cav.__main__:build"
 cav-serve = "cav.__main__:serve"
 

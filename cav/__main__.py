@@ -1,4 +1,5 @@
-"""Command line: cav {scrape,import,build,resolve,serve}, plus cav-scrape, cav-build, cav-serve."""
+"""Command line: cav {scrape,import,import-wayback,build,resolve,serve}, plus cav-scrape,
+cav-wayback, cav-build, cav-serve."""
 
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from .build import Builder
 from .scrape import Blocked, crawl, import_mirror
 from .store import Store
 from .versions import parse_query, resolve, version_id
+from .wayback import PERIODS, import_wayback
 
 
 def main(argv=None) -> None:
@@ -26,6 +28,13 @@ def main(argv=None) -> None:
     i = sub.add_parser("import", help="snapshot a directory mirror (<host>/<path> layout)")
     i.add_argument("directory")
     i.add_argument("--at", help="snapshot datetime (default: now)")
+
+    w = sub.add_parser("import-wayback", help="build versions from Wayback Machine captures")
+    w.add_argument("--every", choices=list(PERIODS), default="month",
+                   help="one version per period that has captures (default: month)")
+    w.add_argument("--since", help="ignore captures before this datetime")
+    w.add_argument("--until", help="ignore captures after this datetime")
+    w.add_argument("--delay", type=float, default=1.0, help="seconds between requests")
 
     b = sub.add_parser("build", help="generate the static site")
     b.add_argument("--out", default="dist")
@@ -50,6 +59,13 @@ def main(argv=None) -> None:
     elif args.cmd == "import":
         at = parse_query(args.at) if args.at else datetime.now(timezone.utc)
         print(import_mirror(store, args.directory, at))
+    elif args.cmd == "import-wayback":
+        made = import_wayback(
+            store, every=args.every, delay=args.delay,
+            since=_start(args.since) if args.since else None,
+            until=parse_query(args.until) if args.until else None,
+        )
+        print("\n".join(made) or "no new versions")
     elif args.cmd == "build":
         Builder(store, args.out, args.base).build()
         print(f"built {len(store.versions())} versions into {args.out}")
@@ -59,6 +75,15 @@ def main(argv=None) -> None:
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=args.out)
         print(f"http://localhost:{args.port}/")
         http.server.ThreadingHTTPServer(("", args.port), handler).serve_forever()
+
+
+def _start(q: str) -> datetime:
+    """Earliest instant a partial datetime covers, e.g. '2024' -> 2024-01-01T00:00:00Z."""
+    from .versions import _QUERY_RE
+    g = _QUERY_RE.match(q.strip()).groupdict()
+    pad = {"mo": "01", "d": "01", "h": "00", "mi": "00", "s": "00"}
+    vals = {k: g[k] or pad[k] for k in pad}
+    return datetime(int(g["y"]), *(int(vals[k]) for k in ("mo", "d", "h", "mi", "s")), tzinfo=timezone.utc)
 
 
 def _sub(cmd: str):
@@ -75,6 +100,7 @@ def _sub(cmd: str):
 
 
 scrape = _sub("scrape")
+wayback = _sub("import-wayback")
 build = _sub("build")
 serve = _sub("serve")
 
