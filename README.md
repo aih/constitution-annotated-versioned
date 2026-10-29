@@ -60,6 +60,7 @@ uv sync
 
 uv run cav-scrape --limit 5          # quick check that the source serves your network
 uv run cav-scrape                    # crawl the source into data/ as a new version
+uv run cav-wayback                   # build versions from Wayback Machine captures
 uv run cav-build                     # generate the site into dist/
 uv run cav-serve                     # http://localhost:8000/browse/
 
@@ -78,6 +79,22 @@ use (including `url()` references in CSS), waits 2 seconds between requests
 (the source's robots.txt `Crawl-delay`), and skips URLs with query strings
 (disallowed by robots.txt). It stops with an error if the source answers with
 a bot challenge.
+
+The source serves a Cloudflare challenge to scripts, so `scrape` currently
+stops at the first request from most networks.
+
+`cav-wayback` (`cav import-wayback`) builds versions from Internet Archive
+captures instead. It lists captures of `/browse/*` and `/resources/*` with the
+CDX API, then creates one version per period that has captures (`--every
+month` by default; also `year`, `day`, `capture`), at the latest capture time
+in that period. Each version holds, for every page, the latest capture at or
+before that time; a 404 capture removes the page from later versions. Page
+bodies are fetched once per capture from `id_` URLs (archived bytes without
+the Wayback toolbar), and assets are fetched at the version time. `--since`
+and `--until` limit the date range. Fetched captures are cached in
+`data/wayback-cache.json`, so rerunning resumes an interrupted import and
+skips versions already in the store. Pages the Archive never captured are
+absent, and a page's newest capture can be older than the version time.
 
 `import` takes a directory laid out as `<path>` under the host, such as the
 `constitution.congress.gov/` folder produced by `wget --mirror`.
