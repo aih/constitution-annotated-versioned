@@ -1,0 +1,61 @@
+name: site
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -t .
+      - name: Browser test of ?date= resolution on the fixture site
+        run: |
+          python -m cav --data /tmp/fx import tests/fixtures/v1/constitution.congress.gov --at 2026-01-15T12:00:00Z
+          python -m cav --data /tmp/fx import tests/fixtures/v2/constitution.congress.gov --at 2026-06-01T08:30:00Z
+          python -m cav --data /tmp/fx build --out /tmp/fx-dist
+          (python -m cav serve --out /tmp/fx-dist --port 8765 &) && sleep 1
+          npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+          node tests/e2e.cjs http://localhost:8765
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: echo "has=$(ls data/snapshots/*.json >/dev/null 2>&1 && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.check.outputs.has == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - if: steps.check.outputs.has == 'true'
+        run: pip install -r requirements.txt
+      - if: steps.check.outputs.has == 'true'
+        id: pages
+        uses: actions/configure-pages@v5
+      - if: steps.check.outputs.has == 'true'
+        run: python -m cav build --out dist --base "${{ steps.pages.outputs.base_path }}"
+      - if: steps.check.outputs.has == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - if: steps.check.outputs.has == 'true'
+        id: deployment
+        uses: actions/deploy-pages@v4

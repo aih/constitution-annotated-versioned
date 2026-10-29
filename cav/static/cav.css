@@ -1,0 +1,36 @@
+/* Demonstration banner and version labels added to every archived page. */
+#cav-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0;
+  padding: 0.35rem 1rem;
+  background: #fff4ce;
+  border-bottom: 1px solid #e0c46c;
+  color: #3b3000;
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  position: relative;
+  z-index: 10000;
+}
+#cav-banner a { color: #1a4480; text-decoration: underline; }
+#cav-banner .cav-version, #cav-banner #cav-query { color: #5c4d00; white-space: nowrap; }
+#cav-banner #cav-query[hidden] { display: none; }
+#cav-footer {
+  clear: both;
+  margin: 1rem 0 0;
+  padding: 0.5rem 1rem;
+  font: 12px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: inherit;
+  opacity: 0.8;
+  text-align: center;
+}
+#cav-footer a { color: inherit; text-decoration: underline; }
+#cav-stub, #cav-versions {
+  max-width: 50rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+#cav-versions li { margin: 0.4rem 0; }
