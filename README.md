@@ -105,8 +105,8 @@ absent, and a page's newest capture can be older than the version time.
 `.github/workflows/snapshot.yml` runs `cav-wayback` on GitHub, commits
 `data/` to `main`, then runs `site.yml` to test, build, and deploy to GitHub
 Pages. Start it from Actions → snapshot → Run workflow, with optional
-`since`, `every`, and `refresh` inputs. It also runs every Monday at 06:17 UTC
-with `refresh`, to pick up new captures. The import step stops after 320
+`since`, `every`, and `refresh` inputs; `since: 2024` with `every: year` gives
+one version per year from 2024. The import step stops after 320
 minutes; whatever finished by then is committed, and running the workflow
 again resumes from the saved listing and capture cache. Deploying requires
 Settings → Pages → Source set to "GitHub Actions".
@@ -137,7 +137,7 @@ number of versions while `data/` grows only with changed files.
 | `cav/static/` | banner CSS and resolver JS copied to `/_cav/` |
 | `tests/` | unit tests, browser test, two-version synthetic fixture |
 | `.github/workflows/site.yml` | tests on every push; builds and deploys to GitHub Pages from `main` when `data/snapshots/` is non-empty |
-| `.github/workflows/snapshot.yml` | Wayback import on GitHub (manual and weekly), commits `data/`, then runs `site.yml` |
+| `.github/workflows/snapshot.yml` | Wayback import on GitHub (manual), commits `data/`, then runs `site.yml` |
 
 ## Tests
 
