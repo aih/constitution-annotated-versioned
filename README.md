@@ -91,9 +91,13 @@ in that period. Each version holds, for every page, the latest capture at or
 before that time; a 404 capture removes the page from later versions. Page
 bodies are fetched once per capture from `id_` URLs (archived bytes without
 the Wayback toolbar), and assets are fetched at the version time. `--since`
-and `--until` limit the date range. Fetched captures are cached in
-`data/wayback-cache.json`, so rerunning resumes an interrupted import and
-skips versions already in the store. Pages the Archive never captured are
+and `--until` limit the date range. The capture listing asks the CDX API to
+collapse consecutive captures with unchanged content and is saved in
+`data/wayback-cdx/`; fetched captures are recorded in `data/wayback-cache.json`.
+Rerunning resumes an interrupted import and skips versions already in the
+store; `--refresh` lists captures again to pick up new ones. A 429 (rate
+limited) response waits for `Retry-After` (or 60 s, doubling up to 15 min) and
+doubles the delay between later requests, up to 60 s. Pages the Archive never captured are
 absent, and a page's newest capture can be older than the version time.
 
 `import` takes a directory laid out as `<path>` under the host, such as the

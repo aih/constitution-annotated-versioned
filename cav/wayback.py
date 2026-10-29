@@ -8,8 +8,9 @@ capture time. Page bodies come from `id_` URLs, which return the archived bytes
 without the Wayback toolbar; assets are fetched at T and resolved by the
 Archive to their nearest capture.
 
-Fetched captures are cached in <data>/wayback-cache.json so an interrupted
-import resumes without refetching.
+The capture listing is saved in <data>/wayback-cdx/ and fetched captures in
+<data>/wayback-cache.json, so an interrupted import resumes without repeating
+requests. A 429 response slows all later requests.
 """
 
 from __future__ import annotations
@@ -34,6 +35,10 @@ log = logging.getLogger(__name__)
 CDX = "https://web.archive.org/cdx/search/cdx"
 RAW = "https://web.archive.org/web/{ts}id_/https://" + SOURCE_HOST + "{path}"
 PERIODS = {"year": 4, "month": 6, "day": 8, "capture": 14}
+CDX_PAGE = 5000      # rows per CDX request
+CDX_DELAY = 5.0      # minimum seconds between CDX requests
+MAX_DELAY = 60.0     # ceiling for the delay after repeated 429s
+MAX_ATTEMPTS = 8
 
 
 @dataclass(frozen=True)
@@ -54,52 +59,88 @@ class Wayback:
         self.delay = delay
         self.s = session or requests.Session()
         self.s.headers.setdefault("User-Agent", USER_AGENT)
+        self.sleep = time.sleep
         self.cache_file = store.root / "wayback-cache.json"
         self.cache: dict[str, dict] = (
             json.loads(self.cache_file.read_text()) if self.cache_file.exists() else {}
         )
 
-    def get(self, url: str, **kw) -> requests.Response:
-        for attempt in range(6):
+    def get(self, url: str, *, delay: float | None = None, **kw) -> requests.Response:
+        """GET with retries. A 429 doubles the delay between all later requests
+        (up to MAX_DELAY) and waits Retry-After, or 60 s doubling to 15 min."""
+        for attempt in range(MAX_ATTEMPTS):
+            wait = min(900, 60 * 2 ** attempt)
             try:
                 r = self.s.get(url, timeout=120, **kw)
             except requests.RequestException as e:
-                log.warning("%s: %s", url, e)
+                log.warning("%s: %s; retrying in %d s", url, e, wait)
             else:
                 if r.status_code not in (429, 502, 503, 504):
-                    time.sleep(self.delay)
+                    self.sleep(max(self.delay, delay or 0))
                     return r
-                log.warning("%s %s", r.status_code, url)
-            time.sleep(min(300, 10 * 2 ** attempt))
-        raise RuntimeError(f"giving up on {url}")
+                if r.status_code == 429:
+                    self.delay = min(MAX_DELAY, max(1.0, self.delay * 2))
+                    retry_after = r.headers.get("Retry-After", "")
+                    if retry_after.isdigit():
+                        wait = int(retry_after)
+                    log.warning("rate limited (429); waiting %d s, then %.0f s between requests",
+                                wait, self.delay)
+                else:
+                    log.warning("%s %s; retrying in %d s", r.status_code, url, wait)
+            self.sleep(wait)
+        raise RuntimeError(f"giving up on {url} after {MAX_ATTEMPTS} attempts; rerun to resume")
 
     # -- listing -----------------------------------------------------------
 
     def captures(self, prefixes=PAGE_PREFIXES) -> list[Capture]:
+        """All page captures under the prefixes.
+
+        collapse=digest drops consecutive captures of a URL with unchanged
+        content. Each listed page of results is appended to
+        <data>/wayback-cdx/<prefix>.jsonl and the resume key saved beside it,
+        so an interrupted listing continues where it stopped.
+        """
         out: list[Capture] = []
         for prefix in prefixes:
+            d = self.store.root / "wayback-cdx"
+            d.mkdir(parents=True, exist_ok=True)
+            name = prefix.strip("/").replace("/", "_") or "root"
+            rows_file, state_file = d / f"{name}.jsonl", d / f"{name}.state.json"
+            state = json.loads(state_file.read_text()) if state_file.exists() else {}
             params = {
                 "url": SOURCE_HOST + prefix + "*",
                 "output": "json",
                 "fl": "timestamp,original,statuscode,mimetype",
                 "filter": "statuscode:(200|404)",
+                "collapse": "digest",
                 "showResumeKey": "true",
-                "limit": "10000",
+                "limit": str(CDX_PAGE),
             }
-            while True:
-                rows = self.get(CDX, params=params).json()
+            if state.get("resume"):
+                params["resumeKey"] = state["resume"]
+            while not state.get("done"):
+                rows = self.get(CDX, params=params, delay=CDX_DELAY).json()
                 resume = None
                 if len(rows) >= 2 and rows[-2] == []:
                     resume = rows[-1][0]
                     rows = rows[:-2]
-                for ts, original, status, mime in rows[1:]:
-                    c = to_capture(ts, original, status, mime)
-                    if c:
-                        out.append(c)
-                log.info("%s: %d captures so far", prefix, len(out))
-                if not resume:
-                    break
-                params["resumeKey"] = resume
+                with rows_file.open("a") as f:
+                    for row in rows[1:]:
+                        f.write(json.dumps(row) + "\n")
+                state = {"resume": resume, "done": not resume}
+                state_file.write_text(json.dumps(state))
+                log.info("%s: listed through %s", prefix, rows[-1][1] if len(rows) > 1 else "end")
+                if resume:
+                    params["resumeKey"] = resume
+            n = 0
+            if rows_file.exists():
+                with rows_file.open() as f:
+                    for line in f:
+                        c = to_capture(*json.loads(line))
+                        if c:
+                            out.append(c)
+                            n += 1
+            log.info("%s: %d captures", prefix, n)
         return sorted(set(out), key=lambda c: (c.ts, c.path))
 
     # -- fetching ----------------------------------------------------------
@@ -186,8 +227,11 @@ def version_times(captures: list[Capture], every: str = "month",
 
 
 def import_wayback(store: Store, *, every: str = "month", since: datetime | None = None,
-                   until: datetime | None = None, delay: float = 1.0,
+                   until: datetime | None = None, delay: float = 1.0, refresh: bool = False,
                    session: requests.Session | None = None) -> list[str]:
+    if refresh:
+        for f in (store.root / "wayback-cdx").glob("*"):
+            f.unlink()
     wb = Wayback(store, delay=delay, session=session)
     caps = wb.captures()
     fmt = lambda d: d.astimezone(timezone.utc).strftime("%Y%m%d%H%M%S") if d else None

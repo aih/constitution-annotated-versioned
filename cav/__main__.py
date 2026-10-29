@@ -35,6 +35,8 @@ def main(argv=None) -> None:
     w.add_argument("--since", help="ignore captures before this datetime")
     w.add_argument("--until", help="ignore captures after this datetime")
     w.add_argument("--delay", type=float, default=1.0, help="seconds between requests")
+    w.add_argument("--refresh", action="store_true",
+                   help="list captures again instead of reusing the saved listing")
 
     b = sub.add_parser("build", help="generate the static site")
     b.add_argument("--out", default="dist")
@@ -61,7 +63,7 @@ def main(argv=None) -> None:
         print(import_mirror(store, args.directory, at))
     elif args.cmd == "import-wayback":
         made = import_wayback(
-            store, every=args.every, delay=args.delay,
+            store, every=args.every, delay=args.delay, refresh=args.refresh,
             since=_start(args.since) if args.since else None,
             until=parse_query(args.until) if args.until else None,
         )
