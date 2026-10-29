@@ -2,19 +2,20 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from cav.store import Store
-from cav.wayback import Capture, import_wayback, to_capture, version_times
+from cav.wayback import Capture, Wayback, import_wayback, to_capture, version_times
 
 PAGE = b"""<html><head><link rel="stylesheet" href="/css/site.css"></head>
 <body><a href="/browse/essay/x/A/">x</a><p>%s</p></body></html>"""
 
 
 class FakeResponse:
-    def __init__(self, status, body=b"", ctype="text/html", data=None):
+    def __init__(self, status, body=b"", ctype="text/html", data=None, headers=None):
         self.status_code = status
         self.content = body
-        self.headers = {"Content-Type": ctype}
+        self.headers = {"Content-Type": ctype, **(headers or {})}
         self._data = data
 
     def json(self):
@@ -48,22 +49,50 @@ class FakeSession:
         return FakeResponse(200, PAGE % ts.encode())
 
 
+class PagedCDXSession(FakeSession):
+    """CDX listing split across two pages, with a 429 before the second."""
+
+    def __init__(self):
+        super().__init__()
+        self.cdx_calls = []
+        self.limited = False
+
+    def get(self, url, params=None, timeout=None):
+        if "/cdx/" in url and params["url"].endswith("/browse/*"):
+            self.cdx_calls.append(dict(params))
+            if "resumeKey" not in params:
+                return FakeResponse(200, data=[
+                    ["timestamp", "original", "statuscode", "mimetype"],
+                    ["20240110000000", "https://constitution.congress.gov/browse/essay/x/A/", "200", "text/html"],
+                    [], ["KEY1"],
+                ])
+            if not self.limited:
+                self.limited = True
+                return FakeResponse(429, headers={"Retry-After": "7"})
+            return FakeResponse(200, data=[
+                ["timestamp", "original", "statuscode", "mimetype"],
+                ["20240301000000", "https://constitution.congress.gov/browse/essay/x/B/", "200", "text/html"],
+            ])
+        return super().get(url, params, timeout)
+
+
+@mock.patch("cav.wayback.time.sleep")
 class WaybackTests(unittest.TestCase):
-    def test_to_capture(self):
+    def test_to_capture(self, _sleep):
         c = to_capture("20240101000000", "http://constitution.congress.gov:80/browse/article-1", "200", "text/html")
         self.assertEqual(c, Capture("20240101000000", "/browse/article-1/", 200, "text/html"))
         self.assertIsNone(to_capture("1", "https://constitution.congress.gov/browse/?q=1", "200", "text/html"))
         self.assertIsNone(to_capture("1", "https://constitution.congress.gov/about/", "200", "text/html"))
         self.assertIsNone(to_capture("1", "https://example.com/browse/", "200", "text/html"))
 
-    def test_version_times(self):
+    def test_version_times(self, _sleep):
         caps = [Capture(ts, "/browse/", 200, "text/html")
                 for ts in ("20240110000000", "20240120000000", "20240301000000")]
         self.assertEqual(version_times(caps, "month"), ["20240120000000", "20240301000000"])
         self.assertEqual(version_times(caps, "year"), ["20240301000000"])
         self.assertEqual(version_times(caps, "month", since="20240201000000"), ["20240301000000"])
 
-    def test_import(self):
+    def test_import(self, _sleep):
         with tempfile.TemporaryDirectory() as d:
             store = Store(Path(d))
             fake = FakeSession()
@@ -86,3 +115,41 @@ class WaybackTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@mock.patch("cav.wayback.time.sleep")
+class ListingTests(unittest.TestCase):
+    def test_paged_listing_with_rate_limit(self, sleep):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d))
+            fake = PagedCDXSession()
+            wb = Wayback(store, delay=0, session=fake)
+            caps = wb.captures(prefixes=("/browse/",))
+            self.assertEqual([c.path for c in caps], ["/browse/essay/x/A/", "/browse/essay/x/B/"])
+            self.assertIn(mock.call(7), sleep.mock_calls)  # honored Retry-After
+            self.assertEqual(wb.delay, 1.0)  # slowed down after the 429
+            self.assertEqual(fake.cdx_calls[0]["collapse"], "digest")
+            # A second listing reuses the saved one.
+            n = len(fake.cdx_calls)
+            self.assertEqual(len(Wayback(store, delay=0, session=fake).captures(prefixes=("/browse/",))), 2)
+            self.assertEqual(len(fake.cdx_calls), n)
+
+    def test_listing_resumes_after_interruption(self, sleep):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d))
+            fake = PagedCDXSession()
+            fake.limited = True
+            real_get = fake.get
+
+            def fail_on_resume(url, params=None, timeout=None):
+                if "/cdx/" in url and "resumeKey" in params:
+                    raise KeyboardInterrupt
+                return real_get(url, params, timeout)
+
+            fake.get = fail_on_resume
+            with self.assertRaises(KeyboardInterrupt):
+                Wayback(store, delay=0, session=fake).captures(prefixes=("/browse/",))
+            fake.get = real_get
+            caps = Wayback(store, delay=0, session=fake).captures(prefixes=("/browse/",))
+            self.assertEqual([c.path for c in caps], ["/browse/essay/x/A/", "/browse/essay/x/B/"])
+            self.assertEqual(fake.cdx_calls[-1]["resumeKey"], "KEY1")
