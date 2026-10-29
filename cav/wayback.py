@@ -128,7 +128,7 @@ class Wayback:
                     for row in rows[1:]:
                         f.write(json.dumps(row) + "\n")
                 state = {"resume": resume, "done": not resume}
-                state_file.write_text(json.dumps(state))
+                write_atomic(state_file, json.dumps(state))
                 log.info("%s: listed through %s", prefix, rows[-1][1] if len(rows) > 1 else "end")
                 if resume:
                     params["resumeKey"] = resume
@@ -167,7 +167,7 @@ class Wayback:
 
     def save_cache(self) -> None:
         self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-        self.cache_file.write_text(json.dumps(self.cache))
+        write_atomic(self.cache_file, json.dumps(self.cache))
 
     # -- snapshots ---------------------------------------------------------
 
@@ -201,6 +201,12 @@ class Wayback:
         self.store.write_manifest(v, files, source=f"wayback:{ts}")
         log.info("version %s: %d files", v, len(files))
         return v
+
+
+def write_atomic(path, text: str) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    tmp.replace(path)
 
 
 def to_capture(ts: str, original: str, status: str, mime: str) -> Capture | None:

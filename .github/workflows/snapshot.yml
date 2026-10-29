@@ -1,0 +1,73 @@
+name: snapshot
+
+# Imports versions from Wayback Machine captures, commits them to main, then
+# builds and deploys the site. An import that hits the time limit commits what
+# it finished; running the workflow again resumes it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Ignore captures before this date (e.g. 2026-01); blank for all"
+        default: ""
+      every:
+        description: "One version per"
+        type: choice
+        options: [month, year, day]
+        default: month
+      refresh:
+        description: "List captures again to pick up new ones"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 6 * * 1"  # Mondays 06:17 UTC, relisting captures
+
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - name: Import from the Wayback Machine
+        timeout-minutes: 320
+        continue-on-error: true
+        env:
+          SINCE: ${{ inputs.since }}
+          EVERY: ${{ inputs.every || 'month' }}
+          REFRESH: ${{ inputs.refresh || github.event_name == 'schedule' }}
+        run: |
+          args=(--every "$EVERY")
+          if [ -n "$SINCE" ]; then args+=(--since "$SINCE"); fi
+          if [ "$REFRESH" = "true" ]; then args+=(--refresh); fi
+          uv run cav-wayback "${args[@]}"
+      - name: Commit snapshots
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "No new data." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          n=$(ls data/snapshots/*.json 2>/dev/null | wc -l)
+          git commit -q -m "Wayback snapshot data ($n versions)"
+          git pull -q --rebase origin main
+          git push -q origin HEAD:main
+          echo "Committed data; $n versions in data/snapshots." >> "$GITHUB_STEP_SUMMARY"
+
+  site:
+    needs: import
+    uses: ./.github/workflows/site.yml

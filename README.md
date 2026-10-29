@@ -93,12 +93,23 @@ bodies are fetched once per capture from `id_` URLs (archived bytes without
 the Wayback toolbar), and assets are fetched at the version time. `--since`
 and `--until` limit the date range. The capture listing asks the CDX API to
 collapse consecutive captures with unchanged content and is saved in
-`data/wayback-cdx/`; fetched captures are recorded in `data/wayback-cache.json`.
+`data/wayback-cdx/` (committed with the snapshots); fetched captures are recorded in `data/wayback-cache.json`.
 Rerunning resumes an interrupted import and skips versions already in the
 store; `--refresh` lists captures again to pick up new ones. A 429 (rate
 limited) response waits for `Retry-After` (or 60 s, doubling up to 15 min) and
 doubles the delay between later requests, up to 60 s. Pages the Archive never captured are
 absent, and a page's newest capture can be older than the version time.
+
+### GitHub Actions
+
+`.github/workflows/snapshot.yml` runs `cav-wayback` on GitHub, commits
+`data/` to `main`, then runs `site.yml` to test, build, and deploy to GitHub
+Pages. Start it from Actions → snapshot → Run workflow, with optional
+`since`, `every`, and `refresh` inputs. It also runs every Monday at 06:17 UTC
+with `refresh`, to pick up new captures. The import step stops after 320
+minutes; whatever finished by then is committed, and running the workflow
+again resumes from the saved listing and capture cache. Deploying requires
+Settings → Pages → Source set to "GitHub Actions".
 
 `import` takes a directory laid out as `<path>` under the host, such as the
 `constitution.congress.gov/` folder produced by `wget --mirror`.
@@ -126,6 +137,7 @@ number of versions while `data/` grows only with changed files.
 | `cav/static/` | banner CSS and resolver JS copied to `/_cav/` |
 | `tests/` | unit tests, browser test, two-version synthetic fixture |
 | `.github/workflows/site.yml` | tests on every push; builds and deploys to GitHub Pages from `main` when `data/snapshots/` is non-empty |
+| `.github/workflows/snapshot.yml` | Wayback import on GitHub (manual and weekly), commits `data/`, then runs `site.yml` |
 
 ## Tests
 
