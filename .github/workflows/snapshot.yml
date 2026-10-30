@@ -19,8 +19,6 @@ on:
         description: "List captures again to pick up new ones"
         type: boolean
         default: false
-  schedule:
-    - cron: "17 6 * * 1"  # Mondays 06:17 UTC, relisting captures
 
 concurrency:
   group: snapshot
@@ -47,7 +45,7 @@ jobs:
         env:
           SINCE: ${{ inputs.since }}
           EVERY: ${{ inputs.every || 'month' }}
-          REFRESH: ${{ inputs.refresh || github.event_name == 'schedule' }}
+          REFRESH: ${{ inputs.refresh }}
         run: |
           args=(--every "$EVERY")
           if [ -n "$SINCE" ]; then args+=(--since "$SINCE"); fi
