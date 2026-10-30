@@ -13,7 +13,7 @@ from .build import Builder
 from .scrape import Blocked, crawl, import_mirror
 from .store import Store
 from .versions import parse_query, resolve, version_id
-from .wayback import PERIODS, import_wayback
+from .wayback import DEFAULT_DELAY, PERIODS, import_wayback
 
 
 def main(argv=None) -> None:
@@ -34,7 +34,10 @@ def main(argv=None) -> None:
                    help="one version per period that has captures (default: month)")
     w.add_argument("--since", help="ignore captures before this datetime")
     w.add_argument("--until", help="ignore captures after this datetime")
-    w.add_argument("--delay", type=float, default=1.0, help="seconds between requests")
+    w.add_argument("--delay", type=float, default=DEFAULT_DELAY,
+                   help=f"seconds between requests (default: {DEFAULT_DELAY:g})")
+    w.add_argument("--only", action="append", default=[], metavar="PREFIX",
+                   help="import only pages under this path, e.g. /browse/article-2/ (repeatable)")
     w.add_argument("--refresh", action="store_true",
                    help="list captures again instead of reusing the saved listing")
 
@@ -64,6 +67,7 @@ def main(argv=None) -> None:
     elif args.cmd == "import-wayback":
         made = import_wayback(
             store, every=args.every, delay=args.delay, refresh=args.refresh,
+            only=tuple(args.only),
             since=_start(args.since) if args.since else None,
             until=parse_query(args.until) if args.until else None,
         )
