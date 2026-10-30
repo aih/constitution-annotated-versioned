@@ -15,12 +15,13 @@ on:
         type: choice
         options: [month, year, day]
         default: month
+      only:
+        description: "Import only pages under these paths, space-separated (e.g. /browse/article-2/ /browse/essay/artII-); blank for all"
+        default: ""
       refresh:
         description: "List captures again to pick up new ones"
         type: boolean
         default: false
-  schedule:
-    - cron: "17 6 * * 1"  # Mondays 06:17 UTC, relisting captures
 
 concurrency:
   group: snapshot
@@ -47,11 +48,13 @@ jobs:
         env:
           SINCE: ${{ inputs.since }}
           EVERY: ${{ inputs.every || 'month' }}
-          REFRESH: ${{ inputs.refresh || github.event_name == 'schedule' }}
+          REFRESH: ${{ inputs.refresh }}
+          ONLY: ${{ inputs.only }}
         run: |
           args=(--every "$EVERY")
           if [ -n "$SINCE" ]; then args+=(--since "$SINCE"); fi
           if [ "$REFRESH" = "true" ]; then args+=(--refresh); fi
+          for p in $ONLY; do args+=(--only "$p"); done
           uv run cav-wayback "${args[@]}"
       - name: Commit snapshots
         run: |

@@ -40,6 +40,8 @@ class FakeSession:
                     ["20240301000000", "https://constitution.congress.gov/browse/essay/x/B/", "200", "text/html"],
                     ["20240401000000", "https://constitution.congress.gov/browse/essay/x/B/", "404", "text/html"],
                     ["20240401000000", "https://constitution.congress.gov/browse/?q=1", "200", "text/html"],
+                    ["20240201000000", "https://constitution.congress.gov/browse/essay/old/", "200", "text/html"],
+                    ["20240215000000", "https://constitution.congress.gov/browse/essay/old/", "301", "unk"],
                 ])
             return FakeResponse(200, data=[])
         self.fetched.append(url)
@@ -84,6 +86,9 @@ class WaybackTests(unittest.TestCase):
         self.assertIsNone(to_capture("1", "https://constitution.congress.gov/browse/?q=1", "200", "text/html"))
         self.assertIsNone(to_capture("1", "https://constitution.congress.gov/about/", "200", "text/html"))
         self.assertIsNone(to_capture("1", "https://example.com/browse/", "200", "text/html"))
+        self.assertIsNone(to_capture("1", "https://constitution.congress.gov/browse/essay/x/%5B''%5D/", "200", "text/html"))
+        self.assertIsNone(to_capture("1", "https://constitution.congress.gov/browse/%0A/", "200", "text/html"))
+        self.assertEqual(to_capture("1", "https://constitution.congress.gov/browse/essay/old/", "301", "unk").status, 301)
 
     def test_version_times(self, _sleep):
         caps = [Capture(ts, "/browse/", 200, "text/html")
@@ -97,7 +102,10 @@ class WaybackTests(unittest.TestCase):
             store = Store(Path(d))
             fake = FakeSession()
             made = import_wayback(store, delay=0, session=fake)
-            self.assertEqual(made, ["20240120T000000Z", "20240301T000000Z", "20240401T000000Z"])
+            self.assertEqual(made, ["20240120T000000Z", "20240215T000000Z", "20240301T000000Z",
+                                    "20240401T000000Z"])
+            feb = store.manifest("20240215T000000Z")["files"]
+            self.assertNotIn("/browse/essay/old/", feb)  # redirect capture removes it
             jan = store.manifest("20240120T000000Z")["files"]
             self.assertEqual(sorted(jan), ["/browse/essay/x/A/", "/css/site.css"])
             self.assertIn(b"20240120000000", store.get_blob(jan["/browse/essay/x/A/"]["sha256"]))
@@ -153,3 +161,14 @@ class ListingTests(unittest.TestCase):
             caps = Wayback(store, delay=0, session=fake).captures(prefixes=("/browse/",))
             self.assertEqual([c.path for c in caps], ["/browse/essay/x/A/", "/browse/essay/x/B/"])
             self.assertEqual(fake.cdx_calls[-1]["resumeKey"], "KEY1")
+
+
+@mock.patch("cav.wayback.time.sleep")
+class OnlyTests(unittest.TestCase):
+    def test_only_limits_pages(self, _sleep):
+        with tempfile.TemporaryDirectory() as d:
+            store = Store(Path(d))
+            made = import_wayback(store, delay=0, only=("/browse/essay/x/B/",), session=FakeSession())
+            self.assertEqual(made, ["20240301T000000Z", "20240401T000000Z"])
+            pages = [p for p in store.manifest(made[0])["files"] if p.startswith("/browse/")]
+            self.assertEqual(pages, ["/browse/essay/x/B/"])  # the fake has no /browse/ index capture

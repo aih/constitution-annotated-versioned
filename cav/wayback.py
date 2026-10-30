@@ -2,7 +2,7 @@
 
 The CDX API lists every capture of a page with its timestamp and status. Each
 version is the state of the site as of a chosen instant T: for every page, the
-latest capture at or before T (a 404 capture drops the page). By default there
+latest capture at or before T (a 404, 410, or redirect capture drops the page). By default there
 is one version per calendar month that has captures, at the month's latest
 capture time. Page bodies come from `id_` URLs, which return the archived bytes
 without the Wayback toolbar; assets are fetched at T and resolved by the
@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import mimetypes
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -35,10 +36,14 @@ log = logging.getLogger(__name__)
 CDX = "https://web.archive.org/cdx/search/cdx"
 RAW = "https://web.archive.org/web/{ts}id_/https://" + SOURCE_HOST + "{path}"
 PERIODS = {"year": 4, "month": 6, "day": 8, "capture": 14}
+DEFAULT_DELAY = 4.0  # seconds between requests (15 per minute)
 CDX_PAGE = 5000      # rows per CDX request
 CDX_DELAY = 5.0      # minimum seconds between CDX requests
 MAX_DELAY = 60.0     # ceiling for the delay after repeated 429s
 MAX_ATTEMPTS = 8
+# Paths made only of URL-safe characters. The Archive also holds captures of
+# malformed links (e.g. ".../%5B''%5D/", "...%0A/") that are not real pages.
+SAFE_PATH = re.compile(r"[/A-Za-z0-9._~-]+")
 
 
 @dataclass(frozen=True)
@@ -54,7 +59,7 @@ def ts_version(ts: str) -> str:
 
 
 class Wayback:
-    def __init__(self, store: Store, *, delay: float = 1.0, session: requests.Session | None = None):
+    def __init__(self, store: Store, *, delay: float = DEFAULT_DELAY, session: requests.Session | None = None):
         self.store = store
         self.delay = delay
         self.s = session or requests.Session()
@@ -111,7 +116,7 @@ class Wayback:
                 "url": SOURCE_HOST + prefix + "*",
                 "output": "json",
                 "fl": "timestamp,original,statuscode,mimetype",
-                "filter": "statuscode:(200|404)",
+                "filter": "statuscode:(200|301|302|404|410)",
                 "collapse": "digest",
                 "showResumeKey": "true",
                 "limit": str(CDX_PAGE),
@@ -214,7 +219,9 @@ def to_capture(ts: str, original: str, status: str, mime: str) -> Capture | None
     if (parts.hostname or "").lower() != SOURCE_HOST or parts.query or not status.isdigit():
         return None
     path = normalize(parts.path or "/")
-    if not is_page_path(path) or not (mime.startswith("text/html") or status == "404"):
+    if not is_page_path(path) or not SAFE_PATH.fullmatch(path):
+        return None
+    if status == "200" and not mime.startswith("text/html"):
         return None
     return Capture(ts, path, int(status), mime)
 
@@ -233,13 +240,18 @@ def version_times(captures: list[Capture], every: str = "month",
 
 
 def import_wayback(store: Store, *, every: str = "month", since: datetime | None = None,
-                   until: datetime | None = None, delay: float = 1.0, refresh: bool = False,
+                   until: datetime | None = None, delay: float = DEFAULT_DELAY,
+                   refresh: bool = False, only: tuple[str, ...] = (),
                    session: requests.Session | None = None) -> list[str]:
     if refresh:
         for f in (store.root / "wayback-cdx").glob("*"):
             f.unlink()
     wb = Wayback(store, delay=delay, session=session)
     caps = wb.captures()
+    if only:
+        # Section index pages (/browse/, /resources/) stay for navigation.
+        caps = [c for c in caps if c.path.startswith(tuple(only)) or c.path in PAGE_PREFIXES]
+        log.info("%d captures under %s", len(caps), ", ".join(only))
     fmt = lambda d: d.astimezone(timezone.utc).strftime("%Y%m%d%H%M%S") if d else None
     times = version_times(caps, every, fmt(since), fmt(until))
     existing = set(store.versions())

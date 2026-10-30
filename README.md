@@ -88,9 +88,9 @@ captures instead. It lists captures of `/browse/*` and `/resources/*` with the
 CDX API, then creates one version per period that has captures (`--every
 month` by default; also `year`, `day`, `capture`), at the latest capture time
 in that period. Each version holds, for every page, the latest capture at or
-before that time; a 404 capture removes the page from later versions. Page
+before that time; a 404, 410, or redirect capture removes the page from later versions. Captures of malformed URLs (anything outside `[/A-Za-z0-9._~-]`) are ignored. `--only PREFIX` (repeatable) limits the import to pages under those paths, plus the `/browse/` and `/resources/` index pages; links to other pages point to the official site. Page
 bodies are fetched once per capture from `id_` URLs (archived bytes without
-the Wayback toolbar), and assets are fetched at the version time. `--since`
+the Wayback toolbar), and assets are fetched at the version time, with 4 s between requests by default (`--delay`). `--since`
 and `--until` limit the date range. The capture listing asks the CDX API to
 collapse consecutive captures with unchanged content and is saved in
 `data/wayback-cdx/` (committed with the snapshots); fetched captures are recorded in `data/wayback-cache.json`.
@@ -105,8 +105,8 @@ absent, and a page's newest capture can be older than the version time.
 `.github/workflows/snapshot.yml` runs `cav-wayback` on GitHub, commits
 `data/` to `main`, then runs `site.yml` to test, build, and deploy to GitHub
 Pages. Start it from Actions → snapshot → Run workflow, with optional
-`since`, `every`, and `refresh` inputs. It also runs every Monday at 06:17 UTC
-with `refresh`, to pick up new captures. The import step stops after 320
+`since`, `every`, `only`, and `refresh` inputs; `since: 2024` with `every: year` gives
+one version per year from 2024. The import step stops after 320
 minutes; whatever finished by then is committed, and running the workflow
 again resumes from the saved listing and capture cache. Deploying requires
 Settings → Pages → Source set to "GitHub Actions".
@@ -137,7 +137,7 @@ number of versions while `data/` grows only with changed files.
 | `cav/static/` | banner CSS and resolver JS copied to `/_cav/` |
 | `tests/` | unit tests, browser test, two-version synthetic fixture |
 | `.github/workflows/site.yml` | tests on every push; builds and deploys to GitHub Pages from `main` when `data/snapshots/` is non-empty |
-| `.github/workflows/snapshot.yml` | Wayback import on GitHub (manual and weekly), commits `data/`, then runs `site.yml` |
+| `.github/workflows/snapshot.yml` | Wayback import on GitHub (manual), commits `data/`, then runs `site.yml` |
 
 ## Tests
 
