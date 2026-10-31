@@ -108,6 +108,16 @@ class BuildTests(unittest.TestCase):
         self.assertIn("2026-06-01 08:30:00 UTC", banner.get_text())
         footer = soup.find("footer").find(id="cav-footer")
         self.assertIn(V2, footer.get_text())
+        self.assertIn("proof of concept by Ari Hershowitz", footer.get_text())
+        self.assertIsNotNone(footer.find("a", href="https://aih.github.io"))
+        self.assertIsNotNone(footer.find("a", href="/_cav/about.html"))
+
+    def test_about_page(self):
+        about = parse(self.read("_cav/about.html"))
+        self.assertIn("proof of concept by Ari Hershowitz", about.find("main").get_text())
+        self.assertIsNotNone(about.find("a", href="https://aih.github.io"))
+        self.assertIsNotNone(about.find(id="cav-footer"))
+        self.assertIsNotNone(parse(self.read("_cav/versions.html")).find(id="cav-footer"))
 
     def test_stubs_and_versions_json(self):
         stub = self.read("browse/essay/artII-S1-C1-4/ALDE_00099999/index.html")

@@ -23,6 +23,9 @@ from .store import Store
 from .versions import display
 
 STATIC = Path(__file__).parent / "static"
+AUTHOR = "Ari Hershowitz"
+AUTHOR_URL = "https://aih.github.io"
+REPO_URL = "https://github.com/aih/constitution-annotated-versioned"
 SKIP_SCHEMES = ("#", "mailto:", "tel:", "javascript:", "data:")
 
 
@@ -88,7 +91,8 @@ class Builder:
             '<div id="cav-banner" role="note">'
             '<span class="cav-warning"><strong>Demonstration site.</strong> '
             'This is not the official Constitution Annotated. '
-            f'See <a href="{official}">constitution.congress.gov</a>.</span>'
+            f'See <a href="{official}">constitution.congress.gov</a>. '
+            f'<a href="{self.base}/_cav/about.html">About</a></span>'
             f'{v}<span id="cav-query" hidden></span></div>'
         )
 
@@ -98,8 +102,49 @@ class Builder:
             '<div id="cav-footer">'
             f'Archived version <a href="{b}{versioned(path, version)}">{version}</a> '
             f'({display(version)}) · <a href="{b}{path}">Latest</a> · '
-            f'<a href="{b}/_cav/versions.html">All versions</a> · '
-            'Demonstration site, not the official Constitution Annotated.</div>'
+            f'<a href="{b}/_cav/versions.html">All versions</a><br>'
+            f'{self.credit()}</div>'
+        )
+
+    def credit(self) -> str:
+        return (
+            f'A proof of concept by <a href="{AUTHOR_URL}">{AUTHOR}</a>, '
+            'not the official Constitution Annotated. '
+            f'<a href="{self.base}/_cav/about.html">About this site</a>'
+        )
+
+    def site_footer(self) -> str:
+        """Footer for the pages this site generates (stubs, version list, About)."""
+        return f'<footer id="cav-footer">{self.credit()}</footer>'
+
+    def about_page(self) -> str:
+        b = self.base
+        latest = versioned("/browse/", self.latest)
+        return (
+            "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            "<meta name=\"robots\" content=\"noindex\"><title>About this site</title>"
+            f"<link rel=\"stylesheet\" href=\"{b}/_cav/cav.css\"></head><body>"
+            f"{self.banner('', '/')}"
+            "<main id=\"cav-about\"><h1>About this site</h1>"
+            f"<p>This site is a proof of concept by <a href=\"{AUTHOR_URL}\">{AUTHOR}</a>. "
+            "It is not the official Constitution Annotated, which is published by the "
+            "Library of Congress at "
+            "<a href=\"https://constitution.congress.gov/\">constitution.congress.gov</a>.</p>"
+            "<p>The official site updates its text in place, so a link shows whatever the text "
+            "says today. This site keeps each captured version of a page at a permanent "
+            f"address that includes the version's date and time, for example "
+            f"<a href=\"{b}{latest}\"><code>{html.escape(latest)}</code></a>. "
+            "Apart from the banner at the top and the version line in the footer, "
+            "each page is the original page as captured.</p>"
+            "<p>Add <code>?date=YYYY-MM-DD</code> or <code>?date=YYYY-MM-DDTHH:MM:SSZ</code> to "
+            "any page address to go to the latest version at or before that time. An address "
+            "without a date goes to the latest version. "
+            f"<a href=\"{b}/_cav/versions.html\">All versions</a> lists every capture date.</p>"
+            "<p>Versions are built from Internet Archive Wayback Machine captures of "
+            "constitution.congress.gov. Pages the Archive did not capture link to the "
+            f"official site. Source code: <a href=\"{REPO_URL}\">{REPO_URL.removeprefix('https://')}</a>.</p>"
+            f"</main>{self.site_footer()}</body></html>"
         )
 
     def decorate(self, soup: BeautifulSoup, version: str, path: str) -> None:
@@ -157,7 +202,7 @@ class Builder:
             f"{self.banner('', path)}"
             f"<main id=\"cav-stub\"><p>{status} "
             f"<a href=\"{target}\">Latest version ({display(latest_with_page)})</a></p></main>"
-            "</body></html>"
+            f"{self.site_footer()}</body></html>"
         )
 
     def versions_page(self, roots: dict[str, list[str]]) -> str:
@@ -177,7 +222,7 @@ class Builder:
             "<main id=\"cav-versions\"><h1>Archived versions</h1>"
             "<p>Add <code>?date=YYYY-MM-DD</code> or <code>?date=YYYY-MM-DDTHH:MM:SSZ</code> "
             "to any page address to see the latest version at or before that time.</p>"
-            f"<ul>{rows}</ul></main></body></html>"
+            f"<ul>{rows}</ul></main>{self.site_footer()}</body></html>"
         )
 
     def build(self) -> None:
@@ -201,5 +246,6 @@ class Builder:
             shutil.copy(f, cav / f.name)
         (cav / "versions.json").write_text(json.dumps({"versions": self.versions}))
         (cav / "versions.html").write_text(self.versions_page(roots))
+        (cav / "about.html").write_text(self.about_page())
         (self.out / "404.html").write_text(self.stub("/browse/", latest_for.get("/browse/", self.latest), not_found=True))
         (self.out / ".nojekyll").write_text("")

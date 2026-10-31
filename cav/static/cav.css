@@ -27,7 +27,7 @@
   text-align: center;
 }
 #cav-footer a { color: inherit; text-decoration: underline; }
-#cav-stub, #cav-versions {
+#cav-stub, #cav-versions, #cav-about {
   max-width: 50rem;
   margin: 2rem auto;
   padding: 0 1rem;
